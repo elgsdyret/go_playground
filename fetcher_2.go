@@ -2,6 +2,7 @@ package main
 
 import (
     "fmt"
+    "sync"
 )
 
 type Fetcher interface {
@@ -10,13 +11,27 @@ type Fetcher interface {
     Fetch(url string) (result *fakeResult, err error)
 }
 
+
+var allReadyChecked = struct{
+    sync.RWMutex
+    m map[string]int
+}{m: make(map[string]int)}
+
 // Crawl uses fetcher to recursively crawl
 // pages starting with url, to a maximum of depth.
 func Crawl(url string, depth int, fetcher Fetcher, resCh chan<- *resultWithUrl, errCh chan<- error) {
-    // TODO: Don't fetch the same URL twice.
     if depth <= 0 {
         return
     }
+
+    allReadyChecked.RLock()
+    urlSeenTimes := allReadyChecked.m[url]
+    allReadyChecked.RUnlock()
+
+    if urlSeenTimes > 0 {
+        return
+    }
+
     result, err := fetcher.Fetch(url)    
     if err != nil {
         errCh <- err
@@ -24,6 +39,10 @@ func Crawl(url string, depth int, fetcher Fetcher, resCh chan<- *resultWithUrl, 
     }
     
     resCh <- &resultWithUrl {url, result}    
+
+    allReadyChecked.Lock()
+    allReadyChecked.m[url]++
+    allReadyChecked.Unlock()
 
     for _, u := range result.urls {
         go Crawl(u, depth-1, fetcher, resCh, errCh)
@@ -43,8 +62,6 @@ func printer(resCh <-chan *resultWithUrl, errCh <-chan error) {
 }
 
 func main() {
-    // TODO: how to avoid fetching the same url twice? - pass list of seen along? what about sync? could be done by ref, but would not be thread-safe
-
     resCh := make(chan *resultWithUrl, 100)
     errCh := make(chan error, 100)
 
