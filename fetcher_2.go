@@ -12,9 +12,8 @@ type Fetcher interface {
 
 // Crawl uses fetcher to recursively crawl
 // pages starting with url, to a maximum of depth.
-func Crawl(url string, depth int, fetcher Fetcher, resCh chan *resultWithUrl, errCh chan error) {
+func Crawl(url string, depth int, fetcher Fetcher, resCh chan<- *resultWithUrl, errCh chan<- error) {
     // TODO: Don't fetch the same URL twice.
-    // This implementation doesn't do either:
     if depth <= 0 {
         return
     }
@@ -32,24 +31,28 @@ func Crawl(url string, depth int, fetcher Fetcher, resCh chan *resultWithUrl, er
     return
 }
 
-func main() {
-    // TODO: how to konw when there is no more to read from the channel? -- if we read too much it will lock it seems.... 
-    // TODO: maybe it is not relevant to "stop" - just use a switch to read from channel and then keep reading....
-
-    resCh := make(chan *resultWithUrl, 10)
-    errCh := make(chan error, 10)
-
-    go Crawl("http://golang.org/", 4, fetcher, resCh, errCh)
-
-
+func printer(resCh <-chan *resultWithUrl, errCh <-chan error) {
     for {
         select {
             case res := <- resCh:  
                 fmt.Printf("found: %s %q\n", res.url, res.result.body)  
             case err := <- errCh:
-                fmt.Println(err)        
+                fmt.Println(err)       
         }
     }
+}
+
+func main() {
+    // TODO: how to avoid fetching the same url twice? - pass list of seen along? what about sync? could be done by ref, but would not be thread-safe
+
+    resCh := make(chan *resultWithUrl, 100)
+    errCh := make(chan error, 100)
+
+    go Crawl("http://golang.org/", 4, fetcher, resCh, errCh)
+    go printer(resCh, errCh)
+
+    var input string
+    fmt.Scanln(&input)
 }
 
 // fakeFetcher is Fetcher that returns canned results.
