@@ -12,8 +12,7 @@ type Fetcher interface {
 
 // Crawl uses fetcher to recursively crawl
 // pages starting with url, to a maximum of depth.
-func Crawl(url string, depth int, fetcher Fetcher) {
-    // TODO: Fetch URLs in parallel.
+func Crawl(url string, depth int, fetcher Fetcher, resCh chan *resultWithUrl, errCh chan error) {
     // TODO: Don't fetch the same URL twice.
     // This implementation doesn't do either:
     if depth <= 0 {
@@ -21,28 +20,44 @@ func Crawl(url string, depth int, fetcher Fetcher) {
     }
     result, err := fetcher.Fetch(url)    
     if err != nil {
-        fmt.Println(err)
+        errCh <- err
         return
     }
     
-    fmt.Printf("found: %s %q\n", url, result.body)
+    resCh <- &resultWithUrl {url, result}    
+
     for _, u := range result.urls {
-        Crawl(u, depth-1, fetcher)
+        go Crawl(u, depth-1, fetcher, resCh, errCh)
     }
     return
 }
 
 func main() {
+    // TODO: how to konw when there is no more to read from the channel? -- if we read too much it will lock it seems.... 
+    // TODO: maybe it is not relevant to "stop" - just use a switch to read from channel and then keep reading....
 
-    // TODO: use a channel, but how to handle multiple arguments... 
-    //one option would be to return the result all the way? - but require us to change fetcher
-    //ch1 := make(chan int) --- but the url would not be included either
+    resCh := make(chan *resultWithUrl, 10)
+    errCh := make(chan error, 10)
 
-    Crawl("http://golang.org/", 4, fetcher)
+    go Crawl("http://golang.org/", 4, fetcher, resCh, errCh)
+
+    for i := 0; i < 10; i++ {
+        result := <- resCh
+        fmt.Printf("found: %s %q\n", result.url, result.result.body)    
+    }
+    for i := 0; i < 1; i++ {
+        err := <- errCh
+        fmt.Println(err)   
+    }
 }
 
 // fakeFetcher is Fetcher that returns canned results.
 type fakeFetcher map[string]*fakeResult
+
+type resultWithUrl struct {
+    url string
+    result *fakeResult
+}
 
 type fakeResult struct {
     body string
