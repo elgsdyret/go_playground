@@ -41,13 +41,14 @@ func main() {
 
     go Crawl("http://golang.org/", 4, fetcher, resCh, errCh)
 
-    for i := 0; i < 10; i++ {
-        result := <- resCh
-        fmt.Printf("found: %s %q\n", result.url, result.result.body)    
-    }
-    for i := 0; i < 1; i++ {
-        err := <- errCh
-        fmt.Println(err)   
+
+    for {
+        select {
+            case res := <- resCh:  
+                fmt.Printf("found: %s %q\n", res.url, res.result.body)  
+            case err := <- errCh:
+                fmt.Println(err)        
+        }
     }
 }
 
